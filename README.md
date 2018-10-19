@@ -58,7 +58,7 @@ xssh command line help:
   -listKeys
     	list keys from store
   -pem string
-    	private key file name, default will be user.pem under ~/.ssh
+    	private key file name, default will be ~/.ssh/id_rsa
   -port string
     	port: Port in ssh/config (default "22")
   -putKey

@@ -311,6 +311,11 @@ func (c *Config) AddHost() {
 	if len(*pHost) == 0 {
 		panic("HostName is missing!")
 	}
+	if len(*pPem) == 0 {
+		var err error
+		*pPem, err = filepath.Abs(os.Getenv("HOME") + "/.ssh/id_rsa")
+		checkError(err)
+	}
 
 	h := Host{
 		Host:     *pHost,
