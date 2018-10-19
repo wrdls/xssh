@@ -4,13 +4,14 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/coreos/etcd/client"
-	"github.com/devfans/envconf"
-	"golang.org/x/net/context"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/coreos/etcd/client"
+	"github.com/devfans/envconf"
+	"golang.org/x/net/context"
 )
 
 // `host, hostname, user, bastion, category`
@@ -69,7 +70,6 @@ type Store interface {
 	GetKey(key string) (string, error)
 	DelKey(key string) error
 	ListKeys(recursive bool)
-	AllKeys()
 	PutKey(key, value string) error
 	CollectKeys() [][]byte
 }
@@ -93,6 +93,7 @@ type Host struct {
 	User     string
 	Category string
 	Dir      string
+	Pem      string
 }
 
 func (c *Config) init() {
@@ -140,20 +141,15 @@ func (h *Host) Del(store Store) {
 
 // dump host config to string
 func (h *Host) String() string {
-	if len(*pPem) == 0 {
-		*pPem = "~/.ssh/" + os.Getenv("USER") + ".pem"
-	}
-
 	parts := []string{"Host " + h.Host,
 		"HostName " + h.Ip, "Port " + h.Port,
-		"User " + h.User, "IdentityFile " + *pPem}
+		"User " + h.User, "IdentityFile " + h.Pem}
 
 	if len(h.Bastion) > 0 {
-		parts = append(parts, "ProxyCommand ssh "+h.Bastion+
-			" -W "+"%%"+"h:"+"%%"+"p")
+		parts = append(parts, "ProxyCommand ssh "+h.Bastion+" -W "+"%%"+"h:"+"%%"+"p")
 	}
 
-	return fmt.Sprintf(strings.Join(parts, "\n    "))
+	return fmt.Sprint(strings.Join(parts, "\n    "))
 }
 
 // compose host key path
@@ -181,25 +177,24 @@ func (es *EtcdStore) GetKey(key string) (string, error) {
 	}
 }
 
-// get all keys from etcd store
-func (es *EtcdStore) AllKeys() {
-	resp, err := es.client.Get(context.Background(), *pKey,
-		&client.GetOptions{Recursive: true})
-	checkError(err)
+func printNodeKeys(node *client.Node) {
+	if node == nil {
+		return
+	}
 
-	jsonData, err := json.Marshal(resp)
-	checkError(err)
-	fmt.Println(jsonData)
+	fmt.Println(node.Key)
+
+	for i := range node.Nodes {
+		printNodeKeys(node.Nodes[i])
+	}
 }
 
 // list keys from etcd store
 func (es *EtcdStore) ListKeys(recursive bool) {
-	resp, err := es.client.Get(context.Background(), *pKey,
-		&client.GetOptions{Recursive: recursive})
+	resp, err := es.client.Get(context.Background(), *pKey, &client.GetOptions{Recursive: recursive})
 	checkError(err)
-	jsonData, err := json.Marshal(resp)
-	checkError(err)
-	fmt.Println(jsonData)
+
+	printNodeKeys(resp.Node)
 }
 
 // put key into etcd store
@@ -317,8 +312,15 @@ func (c *Config) AddHost() {
 		panic("HostName is missing!")
 	}
 
-	h := Host{Host: *pHost, Ip: *pHostname, Port: *pPort,
-		User: *pUser, Bastion: *pBastion, Category: *pCategory}
+	h := Host{
+		Host:     *pHost,
+		Ip:       *pHostname,
+		Port:     *pPort,
+		User:     *pUser,
+		Bastion:  *pBastion,
+		Category: *pCategory,
+		Pem:      *pPem,
+	}
 
 	if h.Save(c.store) {
 		fmt.Printf("Host %v added\n", *pHost)
@@ -428,7 +430,7 @@ func main() {
 	} else if *pList {
 		config.ListHosts()
 	} else if *pAllKeys {
-		config.store.AllKeys()
+		config.store.ListKeys(true)
 	} else if *pGetKey {
 		checkKey()
 		v, err := config.store.GetKey(*pKey)
